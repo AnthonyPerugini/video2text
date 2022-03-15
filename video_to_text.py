@@ -4,39 +4,61 @@ import moviepy.editor as mp
 from pydub import AudioSegment
 from pydub.silence import split_on_silence
 
+
+STAGED_FILE = 'interviews/staged/'
+COMPLETED_FILE = 'interviews/completed/'
+
+
 def main():
-    
-    r = sr.Recognizer()
-    path = 'converted.wav'
-    print(get_large_audio_transcription(path))
+
+    global STAGED_FILE
+    global COMPLETED_FILE
+
+
+    for mp4 in os.listdir(STAGED_FILE):
+        filename = mp4.split('.')[0]
+        print(filename)
+
+        # check if output folder already exists, if not, create it
+        if not os.path.exists(COMPLETED_FILE + filename):
+            os.mkdir(COMPLETED_FILE + filename)
+            print('new directory created successfully')
+        else:
+            print(f'{mp4} has already been parsed! skipping')
+            continue
+
+        # convert mp4 to wav
+        clip = mp.VideoFileClip(STAGED_FILE + mp4)
+        clip.audio.write_audiofile(COMPLETED_FILE + filename + '/converted.wav')
+        print('.wav file written')
+
+        # chunk and parse wav into text
+        r = sr.Recognizer()
+        text = get_large_audio_transcription(COMPLETED_FILE + filename + '/converted.wav', r)
+
+        # exporting the result
+        with open(COMPLETED_FILE + filename + '/recognized.txt', 'w') as file:
+           file.write("Recognized Speech:")
+           file.write("\n")
+           file.write(text)
+           print(f'{mp4} processed and text file written to {COMPLETED_FILE + filename + "/recognized.txt"}')
+
+
     exit()
-
-    clip = mp.VideoFileClip('Joe_Biden_Interview.mp4')
-    clip.audio.write_audiofile(r'converted.wav')
-
-
-    audio = sr.AudioFile("converted.wav")
+    # remove all files from staged directory
+    for mp4 in os.scandir(os.getcwd()+'/interviews/staged'):
+        os.remove(mp4)
+        
 
 
-    with audio as source:
-      audio_file = r.record(source)
+def get_large_audio_transcription(path, r):
 
-    result = r.recognize_google(audio_file)
-
-    # exporting the result
-    with open('recognized.txt', 'w') as file:
-       file.write("Recognized Speech:")
-       file.write("\n")
-       file.write(result)
-       print("ready!")
-
-
-def get_large_audio_transcription(path):
     """
     Splitting the large audio file into chunks
     and apply speech recognition on each of these chunks
     """
-    r = sr.Recognizer()
+    global COMPLETED_FILE 
+
     # open the audio file using pydub
     sound = AudioSegment.from_wav(path)  
     # split audio sound where silence is 700 miliseconds or more and get chunks
@@ -50,14 +72,14 @@ def get_large_audio_transcription(path):
     )
     folder_name = "audio-chunks"
     # create a directory to store the audio chunks
-    if not os.path.isdir(folder_name):
-        os.mkdir(folder_name)
-    whole_text = ""
+    if not os.path.isdir(COMPLETED_FILE + folder_name):
+        os.mkdir(COMPLETED_FILE + folder_name)
+    whole_text = []
     # process each chunk 
     for i, audio_chunk in enumerate(chunks, start=1):
         # export audio chunk and save it in
         # the `folder_name` directory.
-        chunk_filename = os.path.join(folder_name, f"chunk{i}.wav")
+        chunk_filename = os.path.join(COMPLETED_FILE, folder_name, f"chunk{i}.wav")
         audio_chunk.export(chunk_filename, format="wav")
         # recognize the chunk
         with sr.AudioFile(chunk_filename) as source:
@@ -68,11 +90,12 @@ def get_large_audio_transcription(path):
             except sr.UnknownValueError as e:
                 print("Error:", str(e))
             else:
+                print(f'parsing : chunk {i}/{len(chunks)}...')
                 text = f"{text.capitalize()}. "
-                print(chunk_filename, ":", text)
-                whole_text += text
+                whole_text.append(text)
+
     # return the text for all chunks detected
-    return whole_text
+    return ' '.join(whole_text)
 
 
 if __name__ == '__main__':
