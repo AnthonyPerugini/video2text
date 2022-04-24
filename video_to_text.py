@@ -5,43 +5,42 @@ from pydub import AudioSegment
 from pydub.silence import split_on_silence
 
 
-STAGED_FILE = 'interviews/staged/'
-COMPLETED_FILE = 'interviews/completed/'
+STAGED_FILE_DIR = 'interviews/staged/'
+COMPLETED_FILE_DIR = 'interviews/completed/'
 
 
 def main():
 
-    global STAGED_FILE
-    global COMPLETED_FILE
+    global STAGED_FILE_DIR
+    global COMPLETED_FILE_DIR
 
 
-    for mp4 in os.listdir(STAGED_FILE):
+    for mp4 in os.listdir(STAGED_FILE_DIR):
         filename = mp4.split('.')[0]
         print(filename)
 
         # check if output folder already exists, if not, create it
-        if not os.path.exists(COMPLETED_FILE + filename):
-            os.mkdir(COMPLETED_FILE + filename)
+        if not os.path.exists(COMPLETED_FILE_DIR + filename):
+            os.mkdir(COMPLETED_FILE_DIR + filename)
             print('new directory created successfully')
         else:
             print(f'{mp4} has already been parsed! skipping')
             continue
 
         # convert mp4 to wav
-        clip = mp.VideoFileClip(STAGED_FILE + mp4)
-        clip.audio.write_audiofile(COMPLETED_FILE + filename + '/converted.wav')
+        clip = mp.VideoFileClip(STAGED_FILE_DIR + mp4)
+        clip.audio.write_audiofile(COMPLETED_FILE_DIR + filename + '/converted.wav')
         print('.wav file written')
 
         # chunk and parse wav into text
-        r = sr.Recognizer()
-        text = get_large_audio_transcription(COMPLETED_FILE + filename + '/converted.wav', r)
+        text = get_large_audio_transcription(COMPLETED_FILE_DIR + filename + '/converted.wav', r)
 
         # exporting the result
-        with open(COMPLETED_FILE + filename + '/recognized.txt', 'w') as file:
+        with open(COMPLETED_FILE_DIR + filename + '/recognized.txt', 'w') as file:
            file.write("Recognized Speech:")
            file.write("\n")
            file.write(text)
-           print(f'{mp4} processed and text file written to {COMPLETED_FILE + filename + "/recognized.txt"}')
+           print(f'{mp4} processed and text file written to {COMPLETED_FILE_DIR + filename + "/recognized.txt"}')
 
 
     exit()
@@ -51,35 +50,39 @@ def main():
         
 
 
-def get_large_audio_transcription(path, r):
+def get_large_audio_transcription(path):
 
     """
     Splitting the large audio file into chunks
     and apply speech recognition on each of these chunks
     """
-    global COMPLETED_FILE 
+    global COMPLETED_FILE_DIR 
 
-    # open the audio file using pydub
+    r = sr.Recognizer()
+
     sound = AudioSegment.from_wav(path)  
-    # split audio sound where silence is 700 miliseconds or more and get chunks
+    print('chunking wav...')
+    # splits audiofile into chunks on silences
     chunks = split_on_silence(sound,
         # experiment with this value for your target audio file
-        min_silence_len = 500,
-        # adjust this per requirement
-        silence_thresh = sound.dBFS-14,
+        min_silence_len = 1000,
+        # adjust this per requirement (-16 default)
+        silence_thresh = sound.dBFS-16,
         # keep the silence for 1 second, adjustable as well
-        keep_silence=500,
+        keep_silence=100
     )
+    print(f'wav chunked into {len(chunks)} parts!')
     folder_name = "audio-chunks"
     # create a directory to store the audio chunks
-    if not os.path.isdir(COMPLETED_FILE + folder_name):
-        os.mkdir(COMPLETED_FILE + folder_name)
+    if not os.path.isdir(COMPLETED_FILE_DIR + folder_name):
+        os.mkdir(COMPLETED_FILE_DIR + folder_name)
     whole_text = []
     # process each chunk 
     for i, audio_chunk in enumerate(chunks, start=1):
+        last_question = False
         # export audio chunk and save it in
         # the `folder_name` directory.
-        chunk_filename = os.path.join(COMPLETED_FILE, folder_name, f"chunk{i}.wav")
+        chunk_filename = os.path.join(COMPLETED_FILE_DIR, folder_name, f"chunk{i}.wav")
         audio_chunk.export(chunk_filename, format="wav")
         # recognize the chunk
         with sr.AudioFile(chunk_filename) as source:
@@ -89,10 +92,14 @@ def get_large_audio_transcription(path, r):
                 text = r.recognize_google(audio_listened)
             except sr.UnknownValueError as e:
                 print("Error:", str(e))
+                if not last_question:
+                    whole_text.append('\n(?)\n')
+                    last_question = True
             else:
-                print(f'parsing : chunk {i}/{len(chunks)}...')
+                last_question = False
                 text = f"{text.capitalize()}. "
-                whole_text.append(text)
+                print(f'parsing : chunk {i}/{len(chunks)} ... {text}')
+                whole_text.append(text.strip())
 
     # return the text for all chunks detected
     return ' '.join(whole_text)
